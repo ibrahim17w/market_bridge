@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -8,6 +9,10 @@ class ApiService {
     if (Platform.isAndroid) return 'http://10.0.2.2:3000';
     return 'http://localhost:3000';
   }
+
+  static final Map<String, dynamic> _cache = {};
+  static final Map<String, DateTime> _cacheTime = {};
+  static const Duration _cacheDuration = Duration(minutes: 2);
 
   static Map<String, String> get publicHeaders => {
     'Content-Type': 'application/json',
@@ -42,8 +47,6 @@ class ApiService {
     };
   }
 
-  // FIX: For multipart requests, NEVER send 'Content-Type': 'application/json'.
-  // The http package sets multipart/form-data automatically with the correct boundary.
   static Future<Map<String, String>> get multipartAuthHeaders async {
     final token = await getToken();
     return {if (token != null) 'Authorization': 'Bearer $token'};
@@ -57,13 +60,76 @@ class ApiService {
     final payload = utf8.decode(
       base64Url.decode(base64Url.normalize(parts[1])),
     );
-    return jsonDecode(payload);
+    return jsonDecode(payload) as Map<String, dynamic>;
   }
 
   static Future<String?> getUserRole() async {
     final payload = await decodeToken();
     return payload?['role'] as String?;
   }
+
+  // ============================================================
+  // HTTP HELPERS WITH TIMEOUT
+  // ============================================================
+
+  static Future<http.Response> _getWithTimeout(
+    String url, {
+    Map<String, String>? headers,
+    Duration timeout = const Duration(seconds: 8),
+    bool useCache = false,
+  }) async {
+    final cacheKey = 'GET:$url';
+
+    if (useCache && _cache.containsKey(cacheKey)) {
+      final cachedTime = _cacheTime[cacheKey];
+      if (cachedTime != null &&
+          DateTime.now().difference(cachedTime) < _cacheDuration) {
+        return http.Response(jsonEncode(_cache[cacheKey]), 200);
+      }
+    }
+
+    final response = await http
+        .get(Uri.parse(url), headers: headers)
+        .timeout(
+          timeout,
+          onTimeout: () {
+            throw TimeoutException(
+              'Request to $url timed out after ${timeout.inSeconds}s',
+            );
+          },
+        );
+
+    if (useCache && response.statusCode == 200) {
+      try {
+        _cache[cacheKey] = jsonDecode(response.body);
+        _cacheTime[cacheKey] = DateTime.now();
+      } catch (_) {}
+    }
+
+    return response;
+  }
+
+  static Future<http.Response> _postWithTimeout(
+    String url, {
+    Map<String, String>? headers,
+    Object? body,
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    return await http
+        .post(Uri.parse(url), headers: headers, body: body)
+        .timeout(
+          timeout,
+          onTimeout: () {
+            throw TimeoutException(
+              'Request to $url timed out after ${timeout.inSeconds}s',
+            );
+          },
+        );
+  }
+
+  // ============================================================
+  // AUTH
+  // ============================================================
 
   static Future<Map<String, dynamic>> register({
     required String fullName,
@@ -82,80 +148,80 @@ class ApiService {
       'role': role,
       'preferred_language': preferredLanguage,
     };
-
     if (store != null) body['store'] = store;
 
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/auth/register'),
+    final response = await _postWithTimeout(
+      '$baseUrl/api/auth/register',
       headers: headers,
       body: jsonEncode(body),
     );
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 201) return data;
-    throw Exception(data['error'] ?? 'Registration failed');
+    throw Exception(data['error']?.toString() ?? 'Registration failed');
   }
 
   static Future<Map<String, dynamic>> login({
     required String email,
     required String password,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/auth/login'),
+    final response = await _postWithTimeout(
+      '$baseUrl/api/auth/login',
       headers: headers,
       body: jsonEncode({'email': email, 'password': password}),
     );
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200) {
-      await setToken(data['token']);
+      final token = data['token']?.toString();
+      if (token != null) await setToken(token);
       return data;
     }
-    throw Exception(data['error'] ?? 'Login failed');
+    throw Exception(data['error']?.toString() ?? 'Login failed');
   }
 
   static Future<void> logout() async => clearToken();
 
   static Future<void> resendVerification(String email) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/auth/resend-verification'),
+    final response = await _postWithTimeout(
+      '$baseUrl/api/auth/resend-verification',
       headers: headers,
       body: jsonEncode({'email': email}),
     );
-    final data = jsonDecode(response.body);
     if (response.statusCode != 200) {
-      throw Exception(data['error'] ?? 'Failed to resend');
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw Exception(data['error']?.toString() ?? 'Failed to resend');
     }
   }
 
   static Future<Map<String, dynamic>> getCurrentUser() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/me'),
+    final response = await _getWithTimeout(
+      '$baseUrl/api/me',
       headers: await authHeaders,
     );
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200) return data;
-    throw Exception(data['error'] ?? 'Failed');
+    throw Exception(data['error']?.toString() ?? 'Failed');
   }
 
   static Future<Map<String, dynamic>> updateProfile({
     required String fullName,
     required String phone,
   }) async {
-    final response = await http.put(
-      Uri.parse('$baseUrl/api/me'),
+    final response = await _postWithTimeout(
+      '$baseUrl/api/me',
       headers: await authHeaders,
       body: jsonEncode({'full_name': fullName, 'phone': phone}),
     );
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200) return data;
-    throw Exception(data['error'] ?? 'Update failed');
+    throw Exception(data['error']?.toString() ?? 'Update failed');
   }
 
   static Future<void> changePassword({
     required String currentPassword,
     required String newPassword,
   }) async {
-    final response = await http.put(
-      Uri.parse('$baseUrl/api/me/password'),
+    final response = await _postWithTimeout(
+      '$baseUrl/api/me/password',
       headers: await authHeaders,
       body: jsonEncode({
         'current_password': currentPassword,
@@ -163,25 +229,26 @@ class ApiService {
       }),
     );
     if (response.statusCode != 200) {
-      throw Exception(jsonDecode(response.body)['error'] ?? 'Failed');
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw Exception(data['error']?.toString() ?? 'Failed');
     }
   }
 
   static Future<void> deleteAccount() async {
-    final response = await http.delete(
-      Uri.parse('$baseUrl/api/me'),
-      headers: await authHeaders,
-    );
+    final response = await http
+        .delete(Uri.parse('$baseUrl/api/me'), headers: await authHeaders)
+        .timeout(const Duration(seconds: 8));
     if (response.statusCode == 200) {
       await clearToken();
     } else {
-      throw Exception(jsonDecode(response.body)['error'] ?? 'Failed');
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw Exception(data['error']?.toString() ?? 'Failed');
     }
   }
 
   static Future<void> updatePreferredLanguage(String lang) async {
-    final response = await http.put(
-      Uri.parse('$baseUrl/api/me/language'),
+    final response = await _postWithTimeout(
+      '$baseUrl/api/me/language',
       headers: await authHeaders,
       body: jsonEncode({'preferred_language': lang}),
     );
@@ -191,14 +258,14 @@ class ApiService {
   }
 
   static Future<void> forgotPassword(String email) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/auth/forgot-password'),
+    final response = await _postWithTimeout(
+      '$baseUrl/api/auth/forgot-password',
       headers: headers,
       body: jsonEncode({'email': email}),
     );
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode != 200) {
-      throw Exception(data['error'] ?? 'Failed');
+      throw Exception(data['error']?.toString() ?? 'Failed');
     }
   }
 
@@ -207,8 +274,8 @@ class ApiService {
     required String code,
     required String newPassword,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/auth/reset-password'),
+    final response = await _postWithTimeout(
+      '$baseUrl/api/auth/reset-password',
       headers: headers,
       body: jsonEncode({
         'email': email,
@@ -216,48 +283,62 @@ class ApiService {
         'new_password': newPassword,
       }),
     );
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode != 200) {
-      throw Exception(data['error'] ?? 'Failed');
+      throw Exception(data['error']?.toString() ?? 'Failed');
     }
   }
 
-  // STORES — now public so guests can browse
+  // ============================================================
+  // STORES
+  // ============================================================
+
   static Future<List<dynamic>> fetchStores() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/stores'),
+    final response = await _getWithTimeout(
+      '$baseUrl/api/stores',
       headers: publicHeaders,
+      useCache: true,
     );
-    if (response.statusCode == 200) return jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as List<dynamic>;
+    }
     throw Exception('Failed');
   }
 
   static Future<Map<String, dynamic>> fetchStore(int id) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/stores/$id'),
+    final response = await _getWithTimeout(
+      '$baseUrl/api/stores/$id',
       headers: publicHeaders,
     );
-    if (response.statusCode == 200) return jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
     throw Exception('Failed');
   }
 
   static Future<Map<String, dynamic>> getMyStore() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/my-store'),
+    final response = await _getWithTimeout(
+      '$baseUrl/api/my-store',
       headers: await authHeaders,
     );
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200) return data;
-    throw Exception(data['error'] ?? 'Failed');
+    throw Exception(data['error']?.toString() ?? 'Failed');
   }
 
-  // PRODUCTS — now public so guests can browse
+  // ============================================================
+  // PRODUCTS
+  // ============================================================
+
   static Future<List<dynamic>> fetchProducts(int storeId) async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/products/$storeId'),
+    final response = await _getWithTimeout(
+      '$baseUrl/api/products/$storeId',
       headers: publicHeaders,
+      useCache: true,
     );
-    if (response.statusCode == 200) return jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as List<dynamic>;
+    }
     throw Exception('Failed');
   }
 
@@ -273,7 +354,6 @@ class ApiService {
       'POST',
       Uri.parse('$baseUrl/api/products'),
     );
-    // FIX: Use multipartAuthHeaders instead of authHeaders
     request.headers.addAll(await multipartAuthHeaders);
     request.fields['name'] = name;
     request.fields['price'] = price.toString();
@@ -284,11 +364,11 @@ class ApiService {
       request.files.add(await http.MultipartFile.fromPath('image', image.path));
     }
 
-    final streamed = await request.send();
+    final streamed = await request.send().timeout(const Duration(seconds: 15));
     final response = await http.Response.fromStream(streamed);
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 201) return data;
-    throw Exception(data['error'] ?? 'Failed');
+    throw Exception(data['error']?.toString() ?? 'Failed');
   }
 
   static Future<Map<String, dynamic>> updateProduct({
@@ -304,7 +384,6 @@ class ApiService {
       'PUT',
       Uri.parse('$baseUrl/api/products/$id'),
     );
-    // FIX: Use multipartAuthHeaders instead of authHeaders
     request.headers.addAll(await multipartAuthHeaders);
     request.fields['name'] = name;
     request.fields['price'] = price.toString();
@@ -315,11 +394,11 @@ class ApiService {
       request.files.add(await http.MultipartFile.fromPath('image', image.path));
     }
 
-    final streamed = await request.send();
+    final streamed = await request.send().timeout(const Duration(seconds: 15));
     final response = await http.Response.fromStream(streamed);
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode == 200) return data;
-    throw Exception(data['error'] ?? 'Failed');
+    throw Exception(data['error']?.toString() ?? 'Failed');
   }
 
   static Future<Map<String, dynamic>> updateMyStore({
@@ -336,7 +415,6 @@ class ApiService {
       'PUT',
       Uri.parse('$baseUrl/api/my-store'),
     );
-    // FIX: Use multipartAuthHeaders instead of authHeaders
     request.headers.addAll(await multipartAuthHeaders);
     if (name != null) request.fields['name'] = name;
     if (city != null) request.fields['city'] = city;
@@ -349,12 +427,12 @@ class ApiService {
       request.files.add(await http.MultipartFile.fromPath('image', image.path));
     }
 
-    final streamed = await request.send();
+    final streamed = await request.send().timeout(const Duration(seconds: 15));
     final response = await http.Response.fromStream(streamed);
 
     if (response.statusCode == 200) {
       try {
-        return jsonDecode(response.body);
+        return jsonDecode(response.body) as Map<String, dynamic>;
       } catch (_) {
         throw Exception('Server returned invalid data');
       }
@@ -362,8 +440,9 @@ class ApiService {
 
     String errorMsg;
     try {
-      final data = jsonDecode(response.body);
-      errorMsg = data['error'] ?? 'Failed (status ${response.statusCode})';
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      errorMsg =
+          data['error']?.toString() ?? 'Failed (status ${response.statusCode})';
     } catch (_) {
       errorMsg =
           'Server error (${response.statusCode}). Please check your backend.';
@@ -372,44 +451,49 @@ class ApiService {
   }
 
   static Future<void> deleteProduct(int id) async {
-    final response = await http.delete(
-      Uri.parse('$baseUrl/api/products/$id'),
-      headers: await authHeaders,
-    );
+    final response = await http
+        .delete(
+          Uri.parse('$baseUrl/api/products/$id'),
+          headers: await authHeaders,
+        )
+        .timeout(const Duration(seconds: 8));
     if (response.statusCode != 200) {
-      throw Exception(jsonDecode(response.body)['error'] ?? 'Failed');
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      throw Exception(data['error']?.toString() ?? 'Failed');
     }
   }
 
-  // NEW: Marketplace feed for guests and logged-in users
+  // ============================================================
+  // MARKETPLACE & HOME SCREEN
+  // ============================================================
+
   static Future<List<dynamic>> fetchMarketplaceFeed() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/marketplace/feed'),
+    final response = await _getWithTimeout(
+      '$baseUrl/api/marketplace/feed',
       headers: publicHeaders,
+      useCache: true,
     );
-    if (response.statusCode == 200) return jsonDecode(response.body);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as List<dynamic>;
+    }
     throw Exception('Failed');
   }
 
-  // ==================== NEW ENDPOINTS FOR HOME SCREEN ====================
-
-  /// Track product view for analytics
   static Future<void> trackProductView(int productId) async {
     try {
-      await http.post(
-        Uri.parse('$baseUrl/api/products/$productId/view'),
+      await _postWithTimeout(
+        '$baseUrl/api/products/$productId/view',
         headers: await authHeaders,
       );
     } catch (_) {
-      // Silently fail - analytics shouldn't break UX
+      // Silently fail
     }
   }
 
-  /// Track search query for analytics
   static Future<void> trackSearch(String query) async {
     try {
-      await http.post(
-        Uri.parse('$baseUrl/api/search/track'),
+      await _postWithTimeout(
+        '$baseUrl/api/search/track',
         headers: await authHeaders,
         body: jsonEncode({'query': query}),
       );
@@ -418,34 +502,52 @@ class ApiService {
     }
   }
 
-  /// Get trending products (most viewed)
   static Future<List<dynamic>> fetchTrendingProducts() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/products/trending'),
-      headers: publicHeaders,
-    );
-    if (response.statusCode == 200) return jsonDecode(response.body);
-    throw Exception('Failed to load trending');
-  }
-
-  /// Get sponsored/top stores
-  static Future<List<dynamic>> fetchSponsoredStores() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/stores/sponsored'),
-      headers: publicHeaders,
-    );
-    if (response.statusCode == 200) return jsonDecode(response.body);
-    throw Exception('Failed to load sponsored stores');
-  }
-
-  /// Get personalized recommendations (requires auth)
-  static Future<List<dynamic>> fetchRecommendations() async {
-    final response = await http.get(
-      Uri.parse('$baseUrl/api/recommendations'),
-      headers: await authHeaders,
-    );
-    if (response.statusCode == 200) return jsonDecode(response.body);
-    // Fallback: return empty list if not logged in or error
+    try {
+      final response = await _getWithTimeout(
+        '$baseUrl/api/products/trending',
+        headers: publicHeaders,
+        timeout: const Duration(seconds: 5),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      }
+    } catch (_) {}
     return [];
   }
+
+  static Future<List<dynamic>> fetchSponsoredStores() async {
+    try {
+      final response = await _getWithTimeout(
+        '$baseUrl/api/stores/sponsored',
+        headers: publicHeaders,
+        timeout: const Duration(seconds: 5),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static Future<List<dynamic>> fetchRecommendations() async {
+    try {
+      final response = await _getWithTimeout(
+        '$baseUrl/api/recommendations',
+        headers: await authHeaders,
+        timeout: const Duration(seconds: 5),
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      }
+    } catch (_) {}
+    return [];
+  }
+}
+
+class TimeoutException implements Exception {
+  final String message;
+  TimeoutException(this.message);
+  @override
+  String toString() => message;
 }

@@ -1,0 +1,361 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import '../widgets/gradient_button.dart';
+import '../widgets/theme_toggle.dart';
+import '../widgets/app_notification.dart';
+import '../providers/locale_provider.dart';
+import '../lang/translations.dart';
+import '../utils/error_mapper.dart';
+import 'login_screen.dart';
+
+class ForgotPasswordScreen extends StatefulWidget {
+  const ForgotPasswordScreen({super.key});
+
+  @override
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+}
+
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailCtrl = TextEditingController();
+  final _codeCtrl = TextEditingController();
+  final _newPassCtrl = TextEditingController();
+  bool _isLoading = false;
+  bool _codeSent = false;
+  bool _obscure = true;
+  int _cooldown = 0;
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _emailCtrl.dispose();
+    _codeCtrl.dispose();
+    _newPassCtrl.dispose();
+    super.dispose();
+  }
+
+  void _startCooldown() {
+    _cooldown = 60;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        if (_cooldown > 0) {
+          _cooldown--;
+        } else {
+          timer.cancel();
+        }
+      });
+    });
+  }
+
+  Future<void> _sendCode() async {
+    if (_cooldown > 0) return;
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await ApiService.forgotPassword(_emailCtrl.text.trim());
+      setState(() => _codeSent = true);
+      _startCooldown();
+      showAppNotification(
+        context,
+        message: t('reset_code_sent'),
+        isSuccess: true,
+      );
+    } catch (e) {
+      showAppNotification(
+        context,
+        message: mapBackendError(e.toString()),
+        isError: true,
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_newPassCtrl.text.length < 8) {
+      showAppNotification(
+        context,
+        message: t('password_not_strong'),
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await ApiService.resetPassword(
+        email: _emailCtrl.text.trim(),
+        code: _codeCtrl.text.trim(),
+        newPassword: _newPassCtrl.text,
+      );
+      showAppNotification(
+        context,
+        message: t('password_reset_success'),
+        isSuccess: true,
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      showAppNotification(
+        context,
+        message: mapBackendError(e.toString()),
+        isError: true,
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) return t('enter_email');
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(value.trim())) return t('invalid_credentials');
+    return null;
+  }
+
+  String? _validateCode(String? value) {
+    if (value == null || value.trim().isEmpty) return t('reset_code');
+    if (value.trim().length != 6) return t('invalid_code');
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) return t('enter_password');
+    if (value.length < 8) return t('password_not_strong');
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Stack(
+              children: [
+                SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 80,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 480),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.lock_reset,
+                                size: 64,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'Market Bridge',
+                                style: TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                t('forgot_password'),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color.fromARGB(255, 78, 76, 76),
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              Container(
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).cardColor,
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Theme.of(
+                                        context,
+                                      ).shadowColor.withOpacity(0.1),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(28),
+                                  child: Form(
+                                    key: _formKey,
+                                    child: Column(
+                                      children: [
+                                        TextFormField(
+                                          controller: _emailCtrl,
+                                          keyboardType:
+                                              TextInputType.emailAddress,
+                                          textInputAction: TextInputAction.done,
+                                          validator: _validateEmail,
+                                          onFieldSubmitted: (_) {
+                                            if (!_codeSent) _sendCode();
+                                          },
+                                          enabled: !_codeSent,
+                                          decoration: InputDecoration(
+                                            labelText: t('email'),
+                                            prefixIcon: const Icon(Icons.email),
+                                            border: const OutlineInputBorder(),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        if (_codeSent) ...[
+                                          TextFormField(
+                                            controller: _codeCtrl,
+                                            keyboardType: TextInputType.number,
+                                            textInputAction:
+                                                TextInputAction.next,
+                                            validator: _validateCode,
+                                            decoration: InputDecoration(
+                                              labelText: t('reset_code'),
+                                              prefixIcon: const Icon(
+                                                Icons.confirmation_number,
+                                              ),
+                                              border:
+                                                  const OutlineInputBorder(),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          TextFormField(
+                                            controller: _newPassCtrl,
+                                            obscureText: _obscure,
+                                            textInputAction:
+                                                TextInputAction.done,
+                                            validator: _validatePassword,
+                                            onFieldSubmitted: (_) =>
+                                                _resetPassword(),
+                                            decoration: InputDecoration(
+                                              labelText: t('new_password'),
+                                              prefixIcon: const Icon(
+                                                Icons.lock,
+                                              ),
+                                              suffixIcon: IconButton(
+                                                icon: Icon(
+                                                  _obscure
+                                                      ? Icons.visibility_off
+                                                      : Icons.visibility,
+                                                ),
+                                                onPressed: () => setState(
+                                                  () => _obscure = !_obscure,
+                                                ),
+                                              ),
+                                              border:
+                                                  const OutlineInputBorder(),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 24),
+                                          MouseRegion(
+                                            cursor: SystemMouseCursors.click,
+                                            child: GradientButton(
+                                              onPressed: _isLoading
+                                                  ? null
+                                                  : _resetPassword,
+                                              isLoading: _isLoading,
+                                              child: Text(
+                                                t('reset_password'),
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ] else ...[
+                                          MouseRegion(
+                                            cursor: SystemMouseCursors.click,
+                                            child: GradientButton(
+                                              onPressed:
+                                                  (_isLoading || _cooldown > 0)
+                                                  ? null
+                                                  : _sendCode,
+                                              isLoading: _isLoading,
+                                              child: Text(
+                                                _cooldown > 0
+                                                    ? '${t('send_reset_code')} ($_cooldown)'
+                                                    : t('send_reset_code'),
+                                                style: const TextStyle(
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        const SizedBox(height: 12),
+                                        MouseRegion(
+                                          cursor: SystemMouseCursors.click,
+                                          child: TextButton(
+                                            onPressed: () {
+                                              Navigator.pushReplacement(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      const LoginScreen(),
+                                                ),
+                                              );
+                                            },
+                                            child: Text(t('back')),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: SafeArea(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const ThemeToggle(),
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: IconButton(
+                            icon: ValueListenableBuilder<Locale>(
+                              valueListenable: localeNotifier,
+                              builder: (_, locale, __) => Text(
+                                locale.languageCode.toUpperCase(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                            onPressed: () => showLanguagePicker(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}

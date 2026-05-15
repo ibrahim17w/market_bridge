@@ -1,80 +1,59 @@
 import '../lang/translations.dart';
 
-/// Maps backend English error messages to translated strings.
 String mapBackendError(String raw) {
-  final msg = raw.toLowerCase();
-
-  // Rate limiting / brute force
-  if (msg.contains('too many failed attempts') ||
-      msg.contains('too many requests') ||
-      msg.contains('too many login attempts') ||
-      msg.contains('account locked')) {
-    return t('too_many_attempts');
-  }
-
-  // Email not found
-  if ((msg.contains('not found') || msg.contains('no account')) &&
-      msg.contains('email')) {
-    return t('email_not_found');
-  }
-
-  // Invalid reset code
-  if (msg.contains('invalid') && msg.contains('code')) {
-    return t('invalid_code');
-  }
-
-  // Invalid login credentials
-  if ((msg.contains('invalid') || msg.contains('incorrect')) &&
-      (msg.contains('email') || msg.contains('password'))) {
-    return t('invalid_credentials');
-  }
-
-  // Email not verified
-  if (msg.contains('not verified') || msg.contains('verify your email')) {
+  final lower = raw.toLowerCase();
+  if (lower.contains('not verified') ||
+      lower.contains('email not verified') ||
+      lower.contains('verify your email') || // FIX: match backend login message
+      lower.contains('before logging in')) {
+    // FIX: match backend login message
     return t('email_not_verified');
   }
-
-  // Password strength
-  if (msg.contains('too weak') ||
-      msg.contains('medium strength') ||
-      msg.contains('must be strong')) {
+  if (lower.contains('invalid credentials') ||
+      lower.contains('wrong password') ||
+      lower.contains('email or password is incorrect')) {
+    // FIX: match backend exact message
+    return t('invalid_credentials');
+  }
+  if (lower.contains('already registered') ||
+      lower.contains('already exists')) {
+    return t('already_registered');
+  }
+  if (lower.contains('not found')) {
+    return t('not_found');
+  }
+  if (lower.contains('too many requests') || lower.contains('rate limit')) {
+    return t('too_many_requests');
+  }
+  if (lower.contains('weak password') ||
+      lower.contains('not strong enough') ||
+      lower.contains('too weak') || // FIX: match backend
+      lower.contains('medium strength')) {
+    // FIX: match backend
     return t('password_not_strong');
   }
-
-  // Current password incorrect
-  if (msg.contains('current password is incorrect')) {
-    return t('password_incorrect');
+  if (lower.contains('same as previous') ||
+      lower.contains('cannot reuse') ||
+      lower.contains('same as your previous')) {
+    // FIX: match backend
+    return t('password_reuse');
   }
-
-  // Already registered
-  if (msg.contains('already registered')) {
-    return t('email_already_registered');
+  if (lower.contains('timeout') || lower.contains('timed out')) {
+    return t('request_timeout');
   }
-
-  // Required fields
-  if (msg.contains('fill all required') || msg.contains('required fields')) {
-    return t('fill_required');
+  if (lower.contains('network') || lower.contains('connection')) {
+    return t('network_error');
   }
-
-  // Password mismatch
-  if (msg.contains('do not match') || msg.contains('not match')) {
-    return t('passwords_no_match');
+  if (lower.contains('unauthorized') || lower.contains('401')) {
+    return t('session_expired');
   }
-
-  // Generic server error
-  if (msg.contains('something went wrong') ||
-      msg.contains('server error') ||
-      msg.contains('failed to send')) {
+  if (lower.contains('forbidden') || lower.contains('403')) {
+    return t('access_denied');
+  }
+  if (lower.contains('server error') ||
+      lower.contains('500') ||
+      lower.contains('something went wrong')) {
     return t('server_error');
   }
-  if (msg.contains('same as your previous') ||
-      msg.contains('previous password')) {
-    return t('same_password_not_allowed');
-  }
-  // Clean up raw exception noise and return as-is if no mapping found
-  return raw
-      .replaceAll('Exception:', '')
-      .replaceAll('Exception', '')
-      .replaceAll('Error:', '')
-      .trim();
+  return t('unknown_error');
 }

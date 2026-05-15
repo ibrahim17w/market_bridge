@@ -12,7 +12,6 @@ import '../lang/translations.dart';
 import 'login_screen.dart';
 import 'map_picker_screen.dart';
 import '../utils/error_mapper.dart';
-import 'main_nav_screen.dart'; // FIX: added for post-register navigation
 
 enum PasswordStrength { weak, medium, strong }
 
@@ -333,10 +332,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  // FIX: Go to MainNavScreen with clean stack instead of LoginScreen
                   Navigator.pushAndRemoveUntil(
                     context,
-                    MaterialPageRoute(builder: (_) => const MainNavScreen()),
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
                     (route) => false,
                   );
                 },

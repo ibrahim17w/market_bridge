@@ -12,10 +12,13 @@ import 'screens/main_nav_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeLocale();
+  await initializeTheme();
+
   if (Platform.isWindows || Platform.isLinux) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
+
   runApp(const MyApp());
 }
 
@@ -31,8 +34,7 @@ class MyApp extends StatelessWidget {
           valueListenable: localeNotifier,
           builder: (context, locale, child) {
             return MaterialApp(
-              title:
-                  'Market Bridge', // FIX: was t('app_name') — key removed from translations
+              title: 'Market Bridge',
               debugShowCheckedModeBanner: false,
               themeMode: themeMode,
               locale: locale,
@@ -65,11 +67,11 @@ class MyApp extends StatelessWidget {
                     color: Colors.white,
                   ),
                 ),
-                cardTheme: CardThemeData(
+                cardTheme: const CardThemeData(
                   elevation: 2,
                   color: Colors.white,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
                   ),
                 ),
                 inputDecorationTheme: InputDecorationTheme(
@@ -104,11 +106,11 @@ class MyApp extends StatelessWidget {
                     color: Colors.white,
                   ),
                 ),
-                cardTheme: CardThemeData(
+                cardTheme: const CardThemeData(
                   elevation: 2,
-                  color: const Color(0xFF1A1A1A),
+                  color: Color(0xFF1A1A1A),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
                   ),
                 ),
                 inputDecorationTheme: InputDecorationTheme(
@@ -147,13 +149,16 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> checkAuth() async {
     final loggedIn = await ApiService.isLoggedIn();
-    setState(() => isLoggedIn = loggedIn);
+    if (mounted) setState(() => isLoggedIn = loggedIn);
   }
 
   @override
   Widget build(BuildContext context) {
     if (isLoggedIn == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (isLoggedIn == false) {
+      return const LoginScreen();
     }
     return const PopScope(canPop: false, child: MainNavScreen());
   }

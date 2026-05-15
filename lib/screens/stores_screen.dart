@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:latlong2/latlong.dart';
 import '../services/api_service.dart';
 import '../widgets/theme_toggle.dart';
 import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'store_products_screen.dart';
 import 'my_store_screen.dart';
+import 'map_screen.dart';
 import '../lang/translations.dart';
 
 class StoresScreen extends StatefulWidget {
@@ -48,8 +50,9 @@ class _StoresScreenState extends State<StoresScreen> {
     final url = Uri.parse(
       'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
     );
-    if (await canLaunchUrl(url))
+    if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
@@ -90,6 +93,23 @@ class _StoresScreenState extends State<StoresScreen> {
               itemCount: stores.length,
               itemBuilder: (context, index) {
                 final store = stores[index];
+
+                // Extract with explicit null-safe casting
+                final int? storeId = store['id'] != null
+                    ? (store['id'] is int
+                          ? store['id'] as int
+                          : int.tryParse(store['id'].toString()))
+                    : null;
+                final String storeName =
+                    store['name']?.toString() ?? 'Unknown Store';
+                final String? storeImageUrl = store['image_url']?.toString();
+                final double? lat = store['lat'] != null
+                    ? double.tryParse(store['lat'].toString())
+                    : null;
+                final double? lng = store['lng'] != null
+                    ? double.tryParse(store['lng'].toString())
+                    : null;
+
                 return Card(
                   margin: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -102,7 +122,7 @@ class _StoresScreenState extends State<StoresScreen> {
                       color: Theme.of(context).colorScheme.primary,
                     ),
                     title: Text(
-                      store['name'],
+                      storeName,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: Text(
@@ -114,8 +134,8 @@ class _StoresScreenState extends State<StoresScreen> {
                         context,
                         MaterialPageRoute(
                           builder: (_) => StoreProductsScreen(
-                            storeId: store['id'],
-                            storeName: store['name'],
+                            storeId: storeId ?? 0,
+                            storeName: storeName,
                           ),
                         ),
                       );
@@ -126,10 +146,26 @@ class _StoresScreenState extends State<StoresScreen> {
                         color: Theme.of(context).colorScheme.primary,
                       ),
                       onPressed: () {
-                        if (store['lat'] != null && store['lng'] != null) {
-                          openMap(
-                            double.parse(store['lat'].toString()),
-                            double.parse(store['lng'].toString()),
+                        if (lat != null && lng != null) {
+                          // DEBUG: verify values before push
+                          print(
+                            'StoresScreen pushing: name="$storeName", id=$storeId, lat=$lat, lng=$lng',
+                          );
+
+                          final target = LatLng(lat, lng);
+                          print(
+                            'BEFORE PUSH: storeName="$storeName" storeId=$storeId',
+                          );
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MapScreen(
+                                target: target,
+                                targetStoreId: storeId,
+                                targetName: storeName,
+                                targetImageUrl: storeImageUrl,
+                              ),
+                            ),
                           );
                         }
                       },

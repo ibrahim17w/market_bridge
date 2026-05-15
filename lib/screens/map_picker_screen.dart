@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import '../widgets/cached_tile_provider.dart';
 
 class MapPickerScreen extends StatefulWidget {
   const MapPickerScreen({super.key});
@@ -12,6 +13,8 @@ class MapPickerScreen extends StatefulWidget {
 
 class _MapPickerScreenState extends State<MapPickerScreen> {
   LatLng? _selectedPoint;
+  LatLng? _userLocation;
+  double? _userAccuracy;
   final MapController _mapController = MapController();
   bool _locating = true;
 
@@ -45,13 +48,15 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
 
       final position = await Geolocator.getCurrentPosition();
       final latLng = LatLng(position.latitude, position.longitude);
+
       _mapController.move(latLng, 15);
       setState(() {
         _selectedPoint = latLng;
+        _userLocation = latLng;
+        _userAccuracy = position.accuracy;
         _locating = false;
       });
     } catch (e) {
-      // Fallback to default if GPS fails
       setState(() => _locating = false);
     }
   }
@@ -86,9 +91,61 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
         ),
         children: [
           TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.example.market_bridge',
+            urlTemplate:
+                'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+            subdomains: const ['a', 'b', 'c', 'd'],
+            maxZoom: 20,
+            tileProvider: CachedNetworkTileProvider(),
           ),
+
+          if (_userLocation != null &&
+              _userAccuracy != null &&
+              _userAccuracy! > 0)
+            CircleLayer(
+              circles: [
+                CircleMarker(
+                  point: _userLocation!,
+                  radius: _userAccuracy!,
+                  useRadiusInMeter: true,
+                  color: Colors.blue.withOpacity(0.15),
+                  borderColor: Colors.blue.withOpacity(0.4),
+                  borderStrokeWidth: 1,
+                ),
+              ],
+            ),
+
+          if (_userLocation != null)
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: _userLocation!,
+                  width: 24,
+                  height: 24,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blue.withOpacity(0.4),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.navigation,
+                        size: 12,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
           if (_selectedPoint != null)
             MarkerLayer(
               markers: [
@@ -96,6 +153,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   point: _selectedPoint!,
                   width: 40,
                   height: 40,
+                  alignment: Alignment.topCenter,
                   child: const Icon(
                     Icons.location_pin,
                     color: Colors.red,
@@ -106,18 +164,38 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.small(
-        onPressed: _moveToCurrentLocation,
-        child: _locating
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : const Icon(Icons.my_location),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_userLocation != null)
+            FloatingActionButton.small(
+              heroTag: 'center_user',
+              onPressed: () {
+                if (_userLocation != null) {
+                  _mapController.move(_userLocation!, 16);
+                }
+              },
+              child: const Icon(Icons.my_location),
+            ),
+          const SizedBox(height: 8),
+          FloatingActionButton.small(
+            heroTag: 'refresh_gps',
+            onPressed: () {
+              setState(() => _locating = true);
+              _moveToCurrentLocation();
+            },
+            child: _locating
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.gps_fixed),
+          ),
+        ],
       ),
     );
   }

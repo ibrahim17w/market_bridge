@@ -9,7 +9,7 @@ import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 import '../widgets/app_notification.dart';
 import '../utils/error_mapper.dart';
-import 'main_nav_screen.dart'; // FIX: was stores_screen.dart
+import 'main_nav_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -42,7 +42,6 @@ class _LoginScreenState extends State<LoginScreen> {
       } catch (_) {}
 
       if (mounted) {
-        // FIX: Clear entire stack and land on MainNavScreen
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => const MainNavScreen()),
@@ -51,7 +50,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       final rawMsg = e.toString();
-      final isVerifyError = rawMsg.toLowerCase().contains('not verified');
+      final isVerifyError =
+          rawMsg.toLowerCase().contains('not verified') ||
+          rawMsg.toLowerCase().contains('verify your email');
       final msg = mapBackendError(rawMsg);
       if (mounted) {
         if (isVerifyError) {

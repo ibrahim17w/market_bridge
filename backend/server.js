@@ -708,19 +708,25 @@ app.get('/api/me', authenticateToken, async (req, res) => {
 });
 
 // UPDATE PROFILE
+// FIX: Return only safe fields (exclude password_hash)
 app.put('/api/me', authenticateToken, async (req, res) => {
  const full_name = sanitizeString(req.body.full_name, 100);
  const phone = sanitizeString(req.body.phone, 50);
  const result = await pool.query(
- 'UPDATE users SET full_name=$1, phone=$2 WHERE id=$3 RETURNING *',
+ 'UPDATE users SET full_name=$1, phone=$2 WHERE id=$3 RETURNING id, full_name, email, phone, role, preferred_language, created_at',
  [full_name, phone, req.user.userId]
  );
  res.json(result.rows[0]);
 });
 
 // CHANGE PASSWORD
+// FIX: Validate fields exist before hashing
 app.put('/api/me/password', authenticateToken, async (req, res) => {
+ try {
  const { current_password, new_password } = req.body;
+ if (!current_password || !new_password) {
+ return res.status(400).json({ error: 'Current password and new password are required.' });
+ }
  const user = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.userId]);
  if (!await bcrypt.compare(current_password, user.rows[0].password_hash)) {
  return res.status(400).json({ error: 'Current password is incorrect' });
@@ -728,6 +734,9 @@ app.put('/api/me/password', authenticateToken, async (req, res) => {
  const hashed = await bcrypt.hash(new_password, 10);
  await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [hashed, req.user.userId]);
  res.json({ message: 'Password updated successfully' });
+ } catch (err) {
+ res.status(500).json({ error: 'Something went wrong. Please try again later.' });
+ }
 });
 
 // DELETE ACCOUNT
@@ -746,13 +755,15 @@ app.delete('/api/me', authenticateToken, async (req, res) => {
  // Delete user's store
  await client.query('DELETE FROM stores WHERE owner_id=$1', [req.user.userId]);
 
- // Clean up auth artifacts
+ // Clean up auth artifacts and tracking tables
  const userResult = await client.query('SELECT email FROM users WHERE id=$1', [req.user.userId]);
  if (userResult.rows.length > 0) {
  const email = userResult.rows[0].email;
  await client.query('DELETE FROM failed_logins WHERE email=$1', [email]);
  await client.query('DELETE FROM password_resets WHERE email=$1', [email]);
  }
+ await client.query('DELETE FROM product_views WHERE user_id=$1', [req.user.userId]);
+ await client.query('DELETE FROM search_queries WHERE user_id=$1', [req.user.userId]);
 
  // Delete user
  await client.query('DELETE FROM users WHERE id=$1', [req.user.userId]);
@@ -766,7 +777,7 @@ app.delete('/api/me', authenticateToken, async (req, res) => {
  }
 });
 
-// STORES
+// TRACK PRODUCT VIEW
 app.post('/api/products/:id/view', async (req, res) => {
  try {
  const productId = parseInt(req.params.id);
@@ -1100,7 +1111,6 @@ app.put('/api/my-store', authenticateToken, upload.single('image'), async (req, 
 
 // ==================== NEW: ANALYTICS & HOME SCREEN ENDPOINTS ====================
 
-// TRACK PRODUCT VIEW
 // ADMIN: Set store as sponsored (protected endpoint)
 app.put('/api/admin/stores/:id/sponsor', authenticateToken, async (req, res) => {
  try {

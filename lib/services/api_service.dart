@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -93,7 +92,7 @@ class ApiService {
         .timeout(
           timeout,
           onTimeout: () {
-            throw TimeoutException(
+            throw ApiTimeoutException(
               'Request to $url timed out after ${timeout.inSeconds}s',
             );
           },
@@ -120,7 +119,26 @@ class ApiService {
         .timeout(
           timeout,
           onTimeout: () {
-            throw TimeoutException(
+            throw ApiTimeoutException(
+              'Request to $url timed out after ${timeout.inSeconds}s',
+            );
+          },
+        );
+  }
+
+  // FIX: Added PUT helper to match backend endpoints
+  static Future<http.Response> _putWithTimeout(
+    String url, {
+    Map<String, String>? headers,
+    Object? body,
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    return await http
+        .put(Uri.parse(url), headers: headers, body: body)
+        .timeout(
+          timeout,
+          onTimeout: () {
+            throw ApiTimeoutException(
               'Request to $url timed out after ${timeout.inSeconds}s',
             );
           },
@@ -202,11 +220,12 @@ class ApiService {
     throw Exception(data['error']?.toString() ?? 'Failed');
   }
 
+  // FIX: Use PUT instead of POST to match backend
   static Future<Map<String, dynamic>> updateProfile({
     required String fullName,
     required String phone,
   }) async {
-    final response = await _postWithTimeout(
+    final response = await _putWithTimeout(
       '$baseUrl/api/me',
       headers: await authHeaders,
       body: jsonEncode({'full_name': fullName, 'phone': phone}),
@@ -216,11 +235,12 @@ class ApiService {
     throw Exception(data['error']?.toString() ?? 'Update failed');
   }
 
+  // FIX: Use PUT instead of POST to match backend
   static Future<void> changePassword({
     required String currentPassword,
     required String newPassword,
   }) async {
-    final response = await _postWithTimeout(
+    final response = await _putWithTimeout(
       '$baseUrl/api/me/password',
       headers: await authHeaders,
       body: jsonEncode({
@@ -246,8 +266,9 @@ class ApiService {
     }
   }
 
+  // FIX: Use PUT instead of POST to match backend
   static Future<void> updatePreferredLanguage(String lang) async {
-    final response = await _postWithTimeout(
+    final response = await _putWithTimeout(
       '$baseUrl/api/me/language',
       headers: await authHeaders,
       body: jsonEncode({'preferred_language': lang}),
@@ -545,9 +566,10 @@ class ApiService {
   }
 }
 
-class TimeoutException implements Exception {
+// FIX: Renamed to avoid conflict with dart:async TimeoutException
+class ApiTimeoutException implements Exception {
   final String message;
-  TimeoutException(this.message);
+  ApiTimeoutException(this.message);
   @override
   String toString() => message;
 }

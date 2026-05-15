@@ -6,40 +6,39 @@ class ThemeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return GestureDetector(
-      onTap: () {
-        themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, mode, child) {
+        IconData icon;
+        switch (mode) {
+          case ThemeMode.light:
+            icon = Icons.light_mode;
+            break;
+          case ThemeMode.dark:
+            icon = Icons.dark_mode;
+            break;
+          default:
+            icon = Icons.brightness_auto;
+        }
+        return IconButton(
+          icon: Icon(icon),
+          tooltip: 'Toggle theme',
+          onPressed: () {
+            ThemeMode next;
+            switch (mode) {
+              case ThemeMode.light:
+                next = ThemeMode.dark;
+                break;
+              case ThemeMode.dark:
+                next = ThemeMode.system;
+                break;
+              default:
+                next = ThemeMode.light;
+            }
+            setThemeMode(next);
+          },
+        );
       },
-      child: Container(
-        width: 72,
-        height: 38,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(19),
-          gradient: LinearGradient(
-            colors: isDark
-                ? [Colors.red.shade900, Colors.red.shade600]
-                : [Colors.blue.shade800, Colors.blue.shade500],
-          ),
-        ),
-        child: AnimatedAlign(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-          alignment: isDark ? Alignment.centerRight : Alignment.centerLeft,
-          child: Padding(
-            padding: const EdgeInsets.all(3),
-            child: ClipOval(
-              child: Image.asset(
-                isDark ? 'assets/images/moon.jpg' : 'assets/images/sun.jpg',
-                width: 32,
-                height: 32,
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

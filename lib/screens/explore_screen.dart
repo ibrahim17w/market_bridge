@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../lang/translations.dart';
 import 'store_products_screen.dart';
+import 'map_screen.dart';
+import 'package:latlong2/latlong.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -50,57 +52,81 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          controller: _searchCtrl,
-          onChanged: _onSearch,
-          decoration: InputDecoration(
-            hintText: t('search'),
-            border: InputBorder.none,
-            hintStyle: TextStyle(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          title: TextField(
+            controller: _searchCtrl,
+            onChanged: _onSearch,
+            decoration: InputDecoration(
+              hintText: t('search'),
+              border: InputBorder.none,
+              hintStyle: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              ),
             ),
           ),
+          actions: [
+            if (_searchCtrl.text.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () {
+                  _searchCtrl.clear();
+                  _onSearch('');
+                },
+              ),
+          ],
         ),
-        actions: [
-          if (_searchCtrl.text.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.clear),
-              onPressed: () {
-                _searchCtrl.clear();
-                _onSearch('');
-              },
-            ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: _filtered.length,
-              itemBuilder: (context, i) {
-                final store = _filtered[i];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  child: ListTile(
-                    leading: const CircleAvatar(child: Icon(Icons.store)),
-                    title: Text(store['name'] ?? ''),
-                    subtitle: Text(
-                      '${store['city'] ?? ''}, ${store['country'] ?? ''}',
-                    ),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            StoreProductsScreen(storeId: store['id']),
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: _filtered.length,
+                itemBuilder: (context, i) {
+                  final store = _filtered[i];
+                  final lat = double.tryParse(store['lat']?.toString() ?? '');
+                  final lng = double.tryParse(store['lng']?.toString() ?? '');
+                  final hasLocation = lat != null && lng != null;
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    child: ListTile(
+                      leading: const CircleAvatar(child: Icon(Icons.store)),
+                      title: Text(store['name'] ?? ''),
+                      subtitle: Text(
+                        '${store['city'] ?? ''}, ${store['country'] ?? ''}',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (hasLocation)
+                            IconButton(
+                              icon: const Icon(Icons.map, size: 20),
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      MapScreen(target: LatLng(lat, lng)),
+                                ),
+                              ),
+                            ),
+                          const Icon(Icons.arrow_forward_ios, size: 16),
+                        ],
+                      ),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              StoreProductsScreen(storeId: store['id']),
+                        ),
                       ),
                     ),
-                  ),
-                );
-              },
-            ),
+                  );
+                },
+              ),
+      ),
     );
   }
 

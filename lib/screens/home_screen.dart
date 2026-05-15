@@ -82,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _products = products;
           _productsLoading = false;
+          _updateRecommendedProducts();
         });
     } catch (_) {
       if (mounted) setState(() => _productsLoading = false);
@@ -142,17 +143,23 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
   }
 
-  List<dynamic> _getRecommendedProducts() {
-    final recentViews = <String>[];
-    final recentSearches = <String>[];
-    // Use a simple fallback: random products from the feed
-    if (_products.length <= 6) return List<dynamic>.from(_products);
+  /// FIX: Cache recommended products instead of regenerating random indices on every build call.
+  /// This prevents flickering and ensures consistent UI across rebuilds.
+  void _updateRecommendedProducts() {
+    if (_products.length <= 6) {
+      _recommendedProducts = List<dynamic>.from(_products);
+      return;
+    }
     final random = Random();
     final indices = <int>{};
     while (indices.length < 6 && indices.length < _products.length) {
       indices.add(random.nextInt(_products.length));
     }
-    return indices.map((i) => _products[i]).toList();
+    _recommendedProducts = indices.map((i) => _products[i]).toList();
+  }
+
+  List<dynamic> _getRecommendedProducts() {
+    return _recommendedProducts;
   }
 
   void _onProductTap(dynamic product) {
@@ -519,17 +526,26 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
 
               // ── Latest Products ──
-              _productsLoading
-                  ? const SliverFillRemaining(
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  : _products.isEmpty
-                  ? const SliverFillRemaining(
-                      child: Center(child: Text('No products available')),
-                    )
-                  : _isGridView
-                  ? _buildProductGrid(_products)
-                  : _buildProductList(_products),
+              // FIX: Use SliverToBoxAdapter with Center instead of SliverFillRemaining
+              // to avoid layout issues when combined with other slivers.
+              if (_productsLoading)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 60),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                )
+              else if (_products.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 60),
+                    child: Center(child: Text('No products available')),
+                  ),
+                )
+              else
+                _isGridView
+                    ? _buildProductGrid(_products)
+                    : _buildProductList(_products),
 
               const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
             ],
@@ -723,6 +739,8 @@ class _SmallProductCard extends StatelessWidget {
     return GestureDetector(
       onTap: () => onTap(product),
       child: Container(
+        width: 160,
+        margin: const EdgeInsets.symmetric(horizontal: 6),
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(14),

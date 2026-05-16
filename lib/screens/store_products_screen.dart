@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/api_service.dart';
 import '../lang/translations.dart';
-import 'map_screen.dart';
+import 'store_map_screen.dart'; // CHANGED from 'map_screen.dart'
 
 class StoreProductsScreen extends StatefulWidget {
   final int storeId;
@@ -57,9 +57,20 @@ class _StoreProductsScreenState extends State<StoreProductsScreen> {
       ).showSnackBar(const SnackBar(content: Text('Location not available')));
       return;
     }
+    // CHANGED: StoreMapScreen + pass store data + all stores list
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => MapScreen(target: LatLng(lat, lng))),
+      MaterialPageRoute(
+        builder: (_) => StoreMapScreen(
+          target: LatLng(lat, lng),
+          targetStoreId: widget.storeId,
+          targetName: _displayName.isNotEmpty
+              ? _displayName
+              : _storeData?['name'],
+          targetImageUrl: _storeData?['image_url']?.toString(),
+          stores: _storeData != null ? [_storeData!] : [],
+        ),
+      ),
     );
   }
 

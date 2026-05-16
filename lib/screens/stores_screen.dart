@@ -7,7 +7,7 @@ import 'login_screen.dart';
 import 'profile_screen.dart';
 import 'store_products_screen.dart';
 import 'my_store_screen.dart';
-import 'map_screen.dart';
+import 'store_map_screen.dart';
 import '../lang/translations.dart';
 
 class StoresScreen extends StatefulWidget {
@@ -94,18 +94,18 @@ class _StoresScreenState extends State<StoresScreen> {
               itemBuilder: (context, index) {
                 final store = stores[index];
 
-                // Extract with explicit null-safe casting
-                final int? storeId = store['id'] != null
-                    ? (store['id'] is int
-                          ? store['id'] as int
-                          : int.tryParse(store['id'].toString()))
-                    : null;
+                // FIX: always parse ID safely
+                final int storeId = int.tryParse(store['id'].toString()) ?? 0;
+
                 final String storeName =
                     store['name']?.toString() ?? 'Unknown Store';
+
                 final String? storeImageUrl = store['image_url']?.toString();
+
                 final double? lat = store['lat'] != null
                     ? double.tryParse(store['lat'].toString())
                     : null;
+
                 final double? lng = store['lng'] != null
                     ? double.tryParse(store['lng'].toString())
                     : null;
@@ -134,7 +134,7 @@ class _StoresScreenState extends State<StoresScreen> {
                         context,
                         MaterialPageRoute(
                           builder: (_) => StoreProductsScreen(
-                            storeId: storeId ?? 0,
+                            storeId: storeId,
                             storeName: storeName,
                           ),
                         ),
@@ -147,23 +147,17 @@ class _StoresScreenState extends State<StoresScreen> {
                       ),
                       onPressed: () {
                         if (lat != null && lng != null) {
-                          // DEBUG: verify values before push
-                          print(
-                            'StoresScreen pushing: name="$storeName", id=$storeId, lat=$lat, lng=$lng',
-                          );
-
                           final target = LatLng(lat, lng);
-                          print(
-                            'BEFORE PUSH: storeName="$storeName" storeId=$storeId',
-                          );
+
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => MapScreen(
+                              builder: (context) => StoreMapScreen(
                                 target: target,
                                 targetStoreId: storeId,
                                 targetName: storeName,
                                 targetImageUrl: storeImageUrl,
+                                stores: stores, // CHANGED: pass the full list
                               ),
                             ),
                           );

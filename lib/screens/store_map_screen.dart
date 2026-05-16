@@ -8,27 +8,27 @@ import '../lang/translations.dart';
 import '../widgets/cached_tile_provider.dart';
 import 'store_products_screen.dart';
 
-class MapScreen extends StatefulWidget {
+class StoreMapScreen extends StatefulWidget {
   final LatLng? target;
   final int? targetStoreId;
   final String? targetName;
   final String? targetImageUrl;
-  final List<dynamic>? stores; // CHANGED: accept pre-loaded stores
+  final List<dynamic> stores;
 
-  const MapScreen({
+  const StoreMapScreen({
     super.key,
     this.target,
     this.targetStoreId,
     this.targetName,
     this.targetImageUrl,
-    this.stores, // CHANGED
+    required this.stores,
   });
 
   @override
-  State<MapScreen> createState() => _MapScreenState();
+  State<StoreMapScreen> createState() => _StoreMapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _StoreMapScreenState extends State<StoreMapScreen> {
   final MapController _mapController = MapController();
   List<dynamic> _stores = [];
   LatLng? _userLocation;
@@ -39,12 +39,10 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
 
-    // CHANGED: use passed stores immediately — no network delay, no cache bugs
-    if (widget.stores != null && widget.stores!.isNotEmpty) {
-      _stores = widget.stores!
-          .where((s) => s['lat'] != null && s['lng'] != null)
-          .toList();
-    }
+    // Use passed stores immediately
+    _stores = widget.stores
+        .where((s) => s['lat'] != null && s['lng'] != null)
+        .toList();
 
     if (widget.target == null) {
       _moveToCurrentLocation();
@@ -55,11 +53,6 @@ class _MapScreenState extends State<MapScreen> {
           _mapController.move(widget.target!, 16);
         }
       });
-    }
-
-    // Only fetch from network if we weren't given stores
-    if (widget.stores == null || widget.stores!.isEmpty) {
-      _loadStores();
     }
   }
 
@@ -102,40 +95,27 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  Future<void> _loadStores() async {
-    try {
-      final stores = await ApiService.fetchStores();
-      if (mounted) {
-        setState(() {
-          _stores = stores
-              .where((s) => s['lat'] != null && s['lng'] != null)
-              .toList();
-        });
-      }
-    } catch (e) {
-      print('>>> MapScreen _loadStores error: $e');
-    }
-  }
-
-  // CHANGED: search the loaded list for the store we want to display
   dynamic _findTargetStore() {
     if (widget.target == null && widget.targetStoreId == null) return null;
 
     for (final store in _stores) {
-      // 1) Match by ID (most reliable)
+      // Match by ID
       if (widget.targetStoreId != null) {
         final rawId = store['id'];
         final sid = rawId is int ? rawId : int.tryParse(rawId.toString());
-        if (sid == widget.targetStoreId) return store;
+        if (sid == widget.targetStoreId) {
+          return store;
+        }
       }
 
-      // 2) Match by coordinates (0.001° ≈ 111 m tolerance)
+      // Match by coordinates (0.001° tolerance ≈ 111m)
       if (widget.target != null) {
         final lat = double.tryParse(store['lat'].toString());
         final lng = double.tryParse(store['lng'].toString());
         if (lat != null && lng != null) {
-          if ((lat - widget.target!.latitude).abs() <= 0.001 &&
-              (lng - widget.target!.longitude).abs() <= 0.001) {
+          final latDiff = (lat - widget.target!.latitude).abs();
+          final lngDiff = (lng - widget.target!.longitude).abs();
+          if (latDiff <= 0.001 && lngDiff <= 0.001) {
             return store;
           }
         }
@@ -182,7 +162,6 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final bool isPushedForStore = widget.target != null;
 
-    // CHANGED: find the real store from the list, extract name + image
     final matchedStore = _findTargetStore();
 
     final String displayName =
@@ -202,7 +181,7 @@ class _MapScreenState extends State<MapScreen> {
         : widget.targetImageUrl;
 
     print(
-      '>>> MapScreen BUILD: displayName="$displayName", matchedStore=${matchedStore != null}, storesCount=${_stores.length}',
+      '>>> StoreMapScreen BUILD: displayName="$displayName", matchedStore=${matchedStore != null}, targetStoreId=${widget.targetStoreId}, target=${widget.target}, storesCount=${_stores.length}',
     );
 
     return PopScope(

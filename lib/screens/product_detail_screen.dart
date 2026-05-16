@@ -3,7 +3,7 @@ import 'package:latlong2/latlong.dart';
 import '../services/api_service.dart';
 import '../lang/translations.dart';
 import '../widgets/cached_image.dart';
-import 'map_screen.dart';
+import 'store_map_screen.dart'; // Already correct
 import 'store_products_screen.dart';
 
 /// Product Detail Screen — shows a single product with its shop info and map link.
@@ -48,14 +48,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final lat = double.tryParse(_storeData?['lat']?.toString() ?? '');
     final lng = double.tryParse(_storeData?['lng']?.toString() ?? '');
     if (lat == null || lng == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location not available')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Location not available')));
       return;
     }
+    // CHANGED: pass store data properly
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => MapScreen(target: LatLng(lat, lng))),
+      MaterialPageRoute(
+        builder: (_) => StoreMapScreen(
+          target: LatLng(lat, lng),
+          targetStoreId: widget.product['shop_id'],
+          targetName: _storeData?['name'],
+          targetImageUrl: _storeData?['image_url']?.toString(),
+          stores: _storeData != null ? [_storeData!] : [],
+        ),
+      ),
     );
   }
 
@@ -76,7 +85,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final p = widget.product;
-    final hasLocation = _storeData?['lat'] != null && _storeData?['lng'] != null;
+    final hasLocation =
+        _storeData?['lat'] != null && _storeData?['lng'] != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -113,7 +123,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  if (p['description'] != null && p['description'].toString().isNotEmpty)
+                  if (p['description'] != null &&
+                      p['description'].toString().isNotEmpty)
                     Text(
                       p['description'].toString(),
                       style: TextStyle(
@@ -162,7 +173,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Icon(Icons.qr_code, size: 18, color: Colors.grey.shade500),
+                        Icon(
+                          Icons.qr_code,
+                          size: 18,
+                          color: Colors.grey.shade500,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           '${t('barcode')}: ${p['barcode']}',
@@ -213,10 +228,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .outline
-                                .withOpacity(0.15),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.outline.withOpacity(0.15),
                           ),
                         ),
                         child: Row(

@@ -53,6 +53,17 @@ class _MapScreenState extends State<MapScreen> {
     _loadStores();
   }
 
+  @override
+  void didUpdateWidget(covariant MapScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If the widget was rebuilt with new target info, re-resolve immediately
+    if (widget.targetName != oldWidget.targetName ||
+        widget.targetStoreId != oldWidget.targetStoreId ||
+        widget.target != oldWidget.target) {
+      _resolveTargetInfo();
+    }
+  }
+
   Future<void> _moveToCurrentLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -100,41 +111,59 @@ class _MapScreenState extends State<MapScreen> {
           _stores = stores
               .where((s) => s['lat'] != null && s['lng'] != null)
               .toList();
+          _resolveTargetInfo();
         });
-        // After stores load, try to resolve missing target info by coordinates
-        _resolveTargetInfo();
       }
     } catch (e) {
       // Stores just won't show if this fails
     }
   }
 
-  /// If targetName/targetImageUrl weren't passed, look them up from stores list
+  /// Looks up name/image from the loaded stores list when the constructor
+  /// doesn't receive them (or receives null).
   void _resolveTargetInfo() {
     if (widget.target == null) return;
 
-    // Use passed values if available
-    if (widget.targetName != null && widget.targetName!.isNotEmpty) {
+    // 1) Accept passed values if they exist
+    if (widget.targetName != null && widget.targetName!.trim().isNotEmpty) {
       _resolvedName = widget.targetName;
     }
-    if (widget.targetImageUrl != null && widget.targetImageUrl!.isNotEmpty) {
+    if (widget.targetImageUrl != null &&
+        widget.targetImageUrl!.trim().isNotEmpty) {
       _resolvedImageUrl = widget.targetImageUrl;
     }
 
-    // If already have both, skip lookup
-    if (_resolvedName != null && _resolvedImageUrl != null) return;
+    // If we already have a valid name, we're done
+    if (_resolvedName != null && _resolvedName!.trim().isNotEmpty) return;
 
-    // Look up by coordinate match
-    for (final store in _stores) {
-      final lat = double.tryParse(store['lat'].toString());
-      final lng = double.tryParse(store['lng'].toString());
-      if (lat == null || lng == null) continue;
+    // 2) Try to match by store ID first (handles int vs string IDs from JSON)
+    if (widget.targetStoreId != null) {
+      for (final store in _stores) {
+        final rawId = store['id'];
+        final sid = rawId is int ? rawId : int.tryParse(rawId.toString());
+        if (sid == widget.targetStoreId) {
+          _resolvedName ??= store['name']?.toString();
+          _resolvedImageUrl ??= store['image_url']?.toString();
+          break;
+        }
+      }
+    }
 
-      if ((lat - widget.target!.latitude).abs() < 0.0001 &&
-          (lng - widget.target!.longitude).abs() < 0.0001) {
-        _resolvedName ??= store['name']?.toString();
-        _resolvedImageUrl ??= store['image_url']?.toString();
-        break;
+    // 3) Fallback: match by coordinates (tolerance 0.001 deg ≈ 111 m)
+    if (_resolvedName == null || _resolvedName!.trim().isEmpty) {
+      for (final store in _stores) {
+        final lat = double.tryParse(store['lat'].toString());
+        final lng = double.tryParse(store['lng'].toString());
+        if (lat == null || lng == null) continue;
+
+        final latDiff = (lat - widget.target!.latitude).abs();
+        final lngDiff = (lng - widget.target!.longitude).abs();
+
+        if (latDiff <= 0.001 && lngDiff <= 0.001) {
+          _resolvedName ??= store['name']?.toString();
+          _resolvedImageUrl ??= store['image_url']?.toString();
+          break;
+        }
       }
     }
   }
@@ -177,14 +206,15 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final bool isPushedForStore = widget.target != null;
 
-    // Use resolved name (from lookup) or passed name, or fallback
-    final String displayName = _resolvedName?.isNotEmpty == true
+    // Prefer resolved lookup, then passed param, then translation fallback
+    final String displayName = widget.targetName?.isNotEmpty == true
+        ? widget.targetName!
+        : _resolvedName?.isNotEmpty == true
         ? _resolvedName!
-        : (widget.targetName?.isNotEmpty == true
-              ? widget.targetName!
-              : t('store_location'));
+        : t('store_location');
 
-    final String? displayImageUrl = _resolvedImageUrl?.isNotEmpty == true
+    final String? displayImageUrl =
+        (_resolvedImageUrl != null && _resolvedImageUrl!.trim().isNotEmpty)
         ? _resolvedImageUrl
         : widget.targetImageUrl;
 
